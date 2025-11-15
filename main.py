@@ -17,7 +17,7 @@ def call_openrouter(prompt: str) -> str:
     }
     
     data = {
-        "model": "mistralai/mistral-7b-instruct:free",
+        "model": "tngtech/deepseek-r1t2-chimera:free",
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.7
     }
