@@ -1,48 +1,55 @@
 # telegram_bot.py
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
-import config  # твой config.py с токеном
+import config
+from main import app
+import asyncio
 
-# Функция для команды /start
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Привет! Я простой бот. Просто напиши мне что-нибудь!')
+    await update.message.reply_text('Привет! Я бот с AI-агентом. Задай мне вопрос!')
 
-# Функция для команды /help  
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text('Я просто повторяю твои сообщения! Попробуй написать что-нибудь.')
+    await update.message.reply_text('Просто напиши вопрос, а я передам его AI-агенту!')
 
-# Функция для обработки обычных сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_message = update.message.text
-    user_name = update.message.chat.first_name
     
-    # Просто возвращаем эхо-ответ
-    response = f"Привет, {user_name}! Ты написал: '{user_message}'"
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     
-    await update.message.reply_text(response)
+    try:
+        result = await asyncio.get_event_loop().run_in_executor(
+            None,
+            app.invoke,
+            {
+                "user_input": user_message,
+                "llm_response": ""
+            }
+        )
+        
+        # Проверяем что ответ не пустой и не содержит только пробелы
+        bot_response = result["llm_response"]
+        if not bot_response or bot_response.isspace():
+            bot_response = "Не удалось получить осмысленный ответ от AI. Попробуйте переформулировать вопрос."
+        
+        await update.message.reply_text(bot_response)
+        
+    except Exception as e:
+        print(f"Ошибка в боте: {e}")
+        await update.message.reply_text("Произошла внутренняя ошибка. Попробуйте еще раз.")
 
-# Функция для обработки ошибок
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"Ошибка: {context.error}")
+    print(f"Ошибка Telegram: {context.error}")
 
-# Главная функция
 def main():
-    # Создаем приложение с токеном из config.py
-    app = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
+    app_bot = Application.builder().token(config.TELEGRAM_BOT_TOKEN).build()
     
-    # Добавляем обработчики команд
-    app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("help", help_command))
+    app_bot.add_handler(CommandHandler("start", start_command))
+    app_bot.add_handler(CommandHandler("help", help_command))
+    app_bot.add_handler(MessageHandler(filters.TEXT, handle_message))
+    app_bot.add_error_handler(error_handler)
     
-    # Добавляем обработчик текстовых сообщений
-    app.add_handler(MessageHandler(filters.TEXT, handle_message))
-    
-    # Добавляем обработчик ошибок
-    app.add_error_handler(error_handler)
-    
-    print("Бот запущен...")
-    # Запускаем бота в режиме опроса
-    app.run_polling(poll_interval=3)
+    print("Бот запущен и использует AI-агента...")
+    app_bot.run_polling(poll_interval=3)
 
 if __name__ == "__main__":
     main()
