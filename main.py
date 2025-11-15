@@ -3,6 +3,7 @@ import requests
 from langgraph.graph import StateGraph, START, END
 from typing import Dict, Any
 import config
+from db_prompts import get_agent_prompt
 
 class SimpleState(Dict[str, Any]):
     user_input: str
@@ -47,19 +48,9 @@ def call_openrouter(prompt: str) -> str:
 def first_classifier_agent(state: SimpleState):
     user_message = state["user_input"]
     
-    # Создаем промпт с инструкцией для LLM
-    prompt = f"""
-    Проанализируй вопрос и определи его категорию:
-    
-    ВОПРОС: {user_message}
-    
-    ИНСТРУКЦИЯ:
-    - Если вопрос про финансы, деньги, бюджет, цены, инвестиции - ответь "finance"
-    - Если вопрос про здоровье, болезни, симптомы, лечение - ответь "health"  
-    - Во всех остальных случаях - ответь "general"
-    
-    Ответь только одним словом: finance, health или general
-    """
+    # Берем промпт из базы вместо хардкода
+    base_prompt = get_agent_prompt('classifier')
+    prompt = f"{base_prompt}\n\nВОПРОС: {user_message}\n\nОТВЕТ:"
     
     print("Классификатор определяет категорию...")
     category = call_openrouter(prompt).strip().lower()
@@ -91,14 +82,9 @@ def second_finance_agent(state: SimpleState):
     # Берем данные из state
     user_question = state["user_input"]
     
-    # Создаем промпт для финансов
-    prompt = f"""
-    Ты финансовый эксперт. Ответь на вопрос о финансах:
-    
-    ВОПРОС: {user_question}
-    
-    Дай краткий и полезный финансовый совет.
-    """
+    # Промпт из базы
+    base_prompt = get_agent_prompt('finance_agent')
+    prompt = f"{base_prompt}\n\nВОПРОС: {user_question}\n\nОТВЕТ:"
     
     response = call_openrouter(prompt)
     state["finance_response"] = response  # Записываем ответ в state
@@ -110,14 +96,9 @@ def third_health_agent(state: SimpleState):
     # Берем данные из state
     user_question = state["user_input"]
     
-    # Создаем промпт для здоровья
-    prompt = f"""
-    Ты медицинский консультант. Ответь на вопрос о здоровье:
-    
-    ВОПРОС: {user_question}
-    
-    Дай краткую медицинскую консультацию (не ставь диагнозы).
-    """
+    # Промпт из базы
+    base_prompt = get_agent_prompt('health_agent')
+    prompt = f"{base_prompt}\n\nВОПРОС: {user_question}\n\nОТВЕТ:"
     
     response = call_openrouter(prompt)
     state["health_response"] = response  # Записываем ответ в state
@@ -127,13 +108,9 @@ def third_health_agent(state: SimpleState):
 def general_agent(state: SimpleState):
     user_question = state["user_input"]
     
-    prompt = f"""
-    Ты полезный помощник. Ответь на вопрос:
-    
-    ВОПРОС: {user_question}
-    
-    Дай полезный и вежливый ответ.
-    """
+    # Промпт из базы
+    base_prompt = get_agent_prompt('general_agent')
+    prompt = f"{base_prompt}\n\nВОПРОС: {user_question}\n\nОТВЕТ:"
     
     response = call_openrouter(prompt)
     state["general_response"] = response
