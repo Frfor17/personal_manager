@@ -42,6 +42,9 @@ def print_node(state: SimpleState):
     print(f"LLM: {state['llm_response']}")
     return state
 
+
+
+
 # 4. Собираем граф
 graph = StateGraph(SimpleState)
 graph.add_node("llm", llm_node)
@@ -53,6 +56,10 @@ graph.add_edge("llm", "print")
 graph.add_edge("print", END)
 
 app = graph.compile()
+
+
+
+
 
 # 5. Запускаем
 if __name__ == "__main__":
@@ -66,3 +73,5 @@ if __name__ == "__main__":
     
     result = app.invoke(initial_state)
     print("\nГотово!")
+
+
