@@ -4,10 +4,13 @@ from langgraph.graph import StateGraph, START, END
 from typing import Dict, Any
 import config
 
-# 1. Определяем состояние
 class SimpleState(Dict[str, Any]):
     user_input: str
-    llm_response: str
+    category: str              # "finance", "health", "general"
+    finance_response: str      # ответ финансового агента
+    health_response: str       # ответ медицинского агента  
+    general_response: str      # ответ общего агента
+    final_response: str        # финальный ответ для бота
 
 # 2. Функция для вызова LLM через OpenRouter
 def call_openrouter(prompt: str) -> str:
@@ -41,10 +44,100 @@ def call_openrouter(prompt: str) -> str:
         return "Произошла ошибка при обращении к AI. Попробуйте позже."
 
 # 3. Создаем узлы графа
-def llm_node(state: SimpleState):
-    print("Отправляем запрос к LLM...")
-    response = call_openrouter(state["user_input"])
-    state["llm_response"] = response
+def first_classifier_agent(state: SimpleState):
+    user_message = state["user_input"]
+    
+    # Создаем промпт с инструкцией для LLM
+    prompt = f"""
+    Проанализируй вопрос и определи его категорию:
+    
+    ВОПРОС: {user_message}
+    
+    ИНСТРУКЦИЯ:
+    - Если вопрос про финансы, деньги, бюджет, цены, инвестиции - ответь "finance"
+    - Если вопрос про здоровье, болезни, симптомы, лечение - ответь "health"  
+    - Во всех остальных случаях - ответь "general"
+    
+    Ответь только одним словом: finance, health или general
+    """
+    
+    print("Классификатор определяет категорию...")
+    category = call_openrouter(prompt).strip().lower()
+
+
+    # Очищаем ответ
+    category = category.replace('"', '').replace("'", "").strip()
+
+    # Проверяем что категория валидная
+    if category not in ["finance", "health", "general"]:
+        category = "general"  # fallback
+
+    state["category"] = category
+    print(f"Определена категория: {category}")
+    return state
+
+def router(state: SimpleState):
+    """Решает, куда отправить запрос после классификатора"""
+    category = state["category"]
+    
+    if category == "finance":
+        return "finance_agent"
+    elif category == "health":
+        return "health_agent"
+    else:
+        return "general_agent"
+
+def second_finance_agent(state: SimpleState):
+    # Берем данные из state
+    user_question = state["user_input"]
+    
+    # Создаем промпт для финансов
+    prompt = f"""
+    Ты финансовый эксперт. Ответь на вопрос о финансах:
+    
+    ВОПРОС: {user_question}
+    
+    Дай краткий и полезный финансовый совет.
+    """
+    
+    response = call_openrouter(prompt)
+    state["finance_response"] = response  # Записываем ответ в state
+    state["final_response"] = response  # ← ВАЖНО: пишем в финальный ответ
+    return state
+
+
+def third_health_agent(state: SimpleState):
+    # Берем данные из state
+    user_question = state["user_input"]
+    
+    # Создаем промпт для здоровья
+    prompt = f"""
+    Ты медицинский консультант. Ответь на вопрос о здоровье:
+    
+    ВОПРОС: {user_question}
+    
+    Дай краткую медицинскую консультацию (не ставь диагнозы).
+    """
+    
+    response = call_openrouter(prompt)
+    state["health_response"] = response  # Записываем ответ в state
+    state["final_response"] = response  # ← ВАЖНО: пишем в финальный ответ
+    return state
+
+def general_agent(state: SimpleState):
+    user_question = state["user_input"]
+    
+    prompt = f"""
+    Ты полезный помощник. Ответь на вопрос:
+    
+    ВОПРОС: {user_question}
+    
+    Дай полезный и вежливый ответ.
+    """
+    
+    response = call_openrouter(prompt)
+    state["general_response"] = response
+    state["final_response"] = response  # записываем финальный ответ
     return state
 
 def print_node(state: SimpleState):
@@ -55,11 +148,31 @@ def print_node(state: SimpleState):
 
 # 4. Собираем граф
 graph = StateGraph(SimpleState)
-graph.add_node("llm", llm_node)
-graph.add_node("print", print_node)
-graph.add_edge(START, "llm")
-graph.add_edge("llm", "print")
-graph.add_edge("print", END)
+
+# собираем всех агентов
+graph.add_node("classifier", first_classifier_agent)
+graph.add_node("finance_agent", second_finance_agent)
+graph.add_node("health_agent", third_health_agent)
+graph.add_node("general_agent", general_agent)  # можно переиспользовать или создать отдельного
+
+# Стартуем с классификатора
+graph.add_edge(START, "classifier")
+
+# От классификатора идем к нужному агенту через маршрутизатор
+graph.add_conditional_edges(
+    "classifier",
+    router,  # функция которая решает куда дальше
+    {
+        "finance_agent": "finance_agent",
+        "health_agent": "health_agent", 
+        "general_agent": "general_agent"
+    }
+)
+
+# Все спецагенты идут в конец
+graph.add_edge("finance_agent", END)
+graph.add_edge("health_agent", END) 
+graph.add_edge("general_agent", END)
 
 app = graph.compile()
 
